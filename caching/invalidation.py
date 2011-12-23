@@ -13,17 +13,23 @@ try:
 except ImportError:
     redislib = None
 
-
-CACHE_PREFIX = getattr(settings, 'CACHE_PREFIX', '')
+temp_cache_prefix = getattr(settings, 'CACHE_PREFIX', '')
+if isinstance(temp_cache_prefix, str):
+    def cache_prefix_callback():
+        return temp_cache_prefix
+    CACHE_PREFIX = cache_prefix_callback
+else:
+    CACHE_PREFIX = temp_cache_prefix
 FETCH_BY_ID = getattr(settings, 'FETCH_BY_ID', False)
-FLUSH = CACHE_PREFIX + ':flush:'
+def flush_callback():
+    return CACHE_PREFIX() + ':flush:'
+FLUSH = flush_callback
 
 log = logging.getLogger('caching.invalidation')
 
-
 def make_key(k, with_locale=True):
     """Generate the full key for ``k``, with a prefix."""
-    key = encoding.smart_str('%s:%s' % (CACHE_PREFIX, k))
+    key = encoding.smart_str('%s:%s' % (CACHE_PREFIX(), k))
     if with_locale:
         key += encoding.smart_str(translation.get_language())
     # memcached keys must be < 250 bytes and w/o whitespace, but it's nice
@@ -34,7 +40,7 @@ def make_key(k, with_locale=True):
 def flush_key(obj):
     """We put flush lists in the flush: namespace."""
     key = obj if isinstance(obj, basestring) else obj.cache_key
-    return FLUSH + make_key(key, with_locale=False)
+    return FLUSH() + make_key(key, with_locale=False)
 
 
 def byid(obj):
@@ -114,7 +120,7 @@ class Invalidator(object):
         while 1:
             to_flush = self.get_flush_lists(new_keys)
             flush.update(to_flush)
-            new_keys = set(k for k in to_flush if k.startswith(FLUSH))
+            new_keys = set(k for k in to_flush if k.startswith(FLUSH()))
             diff = new_keys.difference(keys)
             if diff:
                 keys.update(new_keys)
